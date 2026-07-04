@@ -1,9 +1,6 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-try:
-    from mangum import Mangum as Mangum
-except ImportError:
-    Mangum = None  # type: ignore[assignment,misc]
 from routers import chat, ingest, proof, sources
 from routers.github_admin import router as github_admin_router
 from routers.conversations import router as conversations_router
@@ -15,9 +12,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# ALLOWED_ORIGINS env var: comma-separated list of allowed origins.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+allowed_origins = [o.strip().rstrip("/") for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://rag-portfolio-kappa.vercel.app/","http://localhost:3000"],  # tighten to your Vercel domain in production
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -35,7 +36,3 @@ app.include_router(testimonials_router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-# AWS Lambda handler (only active when deployed to Lambda)
-handler = Mangum(app, "on", "/") if Mangum is not None else None
