@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # Logging
+    debug_logs: bool = False   # set DEBUG_LOGS=true in .env to enable verbose logging
+
     # App settings
     app_owner_name: str = "Arun Karthik"
     app_owner_email: str = "arunkarthik.k@zohocorp.com"

@@ -21,7 +21,6 @@ from config import get_settings
 from models.schemas import ConversationCreate, ConversationOut, MessageOut
 
 logger = logging.getLogger("conversations")
-logging.basicConfig(level=logging.DEBUG)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -34,13 +33,6 @@ def require_internal(request: Request, x_internal_key: str = Header(default=""))
     stored_key = settings.internal_api_key
 
     # Debug: log what we received vs what we expect (safe — only logs presence/length, not value)
-    logger.debug(
-        "require_internal | stored_key set=%s len=%d | received_key set=%s len=%d | match=%s",
-        bool(stored_key), len(stored_key),
-        bool(x_internal_key), len(x_internal_key),
-        x_internal_key == stored_key,
-    )
-
     if not stored_key:
         logger.error("INTERNAL_API_KEY is not set in backend env — all conversation requests will be rejected")
         raise HTTPException(status_code=403, detail="Server misconfiguration: INTERNAL_API_KEY not set")

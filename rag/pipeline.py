@@ -31,6 +31,7 @@ from config import get_settings
 from rag.embeddings import get_query_embedding
 from rag.store import hybrid_search
 from rag.cache import check_cache, populate_cache
+from langfuse.model import ModelUsage
 from rag.observability import get_langfuse
 from models.schemas import CitationChunk, ChatResponse, ProofRecord, ConversationMessage
 
@@ -145,7 +146,7 @@ async def run_rag_chat(
     generation = trace.generation(
         name="gpt-4o",
         model="gpt-4o",
-        model_parameters={"temperature": 0.3, "max_tokens": 1024},
+        model_parameters={"temperature": "0.3", "max_tokens": 1024},
         input=messages,
     )
     completion = await oai.chat.completions.create(
@@ -159,7 +160,7 @@ async def run_rag_chat(
     completion_tokens = completion.usage.completion_tokens if completion.usage else 0
     generation.end(
         output=answer,
-        usage={"input": prompt_tokens, "output": completion_tokens, "unit": "TOKENS"},
+        usage=ModelUsage(input=prompt_tokens, output=completion_tokens, unit="TOKENS"),  # type: ignore[call-overload]
     )
 
     # 6. Log proof to Supabase
@@ -291,7 +292,7 @@ async def stream_rag_chat(
     generation = trace.generation(
         name="gpt-4o-stream",
         model="gpt-4o",
-        model_parameters={"temperature": 0.3, "max_tokens": 1024},
+        model_parameters={"temperature": "0.3", "max_tokens": 1024},
         input=messages,
     )
 
@@ -319,7 +320,7 @@ async def stream_rag_chat(
 
     generation.end(
         output=full_answer,
-        usage={"input": prompt_tokens, "output": completion_tokens, "unit": "TOKENS"},
+        usage=ModelUsage(input=prompt_tokens, output=completion_tokens, unit="TOKENS"),  # type: ignore[call-overload]
     )
 
     # 4. Log proof
@@ -358,7 +359,7 @@ async def stream_rag_chat(
     suggestions_gen = trace.generation(
         name="suggestions",
         model="gpt-4o-mini",
-        model_parameters={"temperature": 0.7, "max_tokens": 150},
+        model_parameters={"temperature": "0.7", "max_tokens": 150},
         input=[
             {"role": "system", "content": "Generate 3 follow-up questions as a JSON array. No other text."},
             {"role": "user", "content": f"Question: {question}\n\nAnswer: {full_answer[:800]}"},
@@ -396,11 +397,11 @@ async def stream_rag_chat(
         s_usage = suggestion_resp.usage
         suggestions_gen.end(
             output=suggestions,
-            usage={
-                "input": s_usage.prompt_tokens if s_usage else 0,
-                "output": s_usage.completion_tokens if s_usage else 0,
-                "unit": "TOKENS",
-            },
+            usage=ModelUsage(  # type: ignore[call-overload]
+                input=s_usage.prompt_tokens if s_usage else 0,
+                output=s_usage.completion_tokens if s_usage else 0,
+                unit="TOKENS",
+            ),
         )
     except Exception:
         suggestions = []

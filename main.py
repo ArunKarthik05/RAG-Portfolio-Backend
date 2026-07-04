@@ -1,5 +1,23 @@
 import os
+import logging
 from fastapi import FastAPI
+from config import get_settings
+
+# ── Logging setup ─────────────────────────────────────────────────────────────
+# Set DEBUG_LOGS=true in .env (or Railway env) to enable verbose app logging.
+# Third-party low-level libraries are always kept at WARNING regardless.
+
+_settings = get_settings()
+_app_level = logging.DEBUG if _settings.debug_logs else logging.INFO
+
+logging.basicConfig(
+    level=_app_level,
+    format="%(levelname)s:%(name)s:%(message)s",
+)
+
+# Always suppress noisy internals, regardless of debug_logs flag
+for _noisy in ("hpack", "httpcore", "httpx", "h2", "urllib3"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 from fastapi.middleware.cors import CORSMiddleware
 from routers import chat, ingest, proof, sources
 from routers.github_admin import router as github_admin_router

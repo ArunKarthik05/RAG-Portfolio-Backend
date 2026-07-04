@@ -144,7 +144,7 @@ async def list_testimonials(
         client.table("testimonials")
         .select(
             "id,name,role,company,message,tags,user_id,is_guest,created_at,upvote_count",
-            count="exact",
+            count="exact",  # type: ignore[arg-type]
         )
         .eq("approved", True)
         .order("upvote_count", desc=True)
