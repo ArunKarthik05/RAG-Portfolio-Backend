@@ -39,7 +39,6 @@ pyrefly.toml
 
 # ML model cache (downloaded weights — large files)
 .cache/
-models/
 *.bin
 *.safetensors
 *.gguf
