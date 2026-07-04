@@ -20,6 +20,10 @@ class IngestReposRequest(BaseModel):
     repo_names: list[str]  # short repo names to ingest e.g. ["my-project"]
 
 
+class BulkDeleteReposRequest(BaseModel):
+    repo_names: list[str]
+
+
 @router.get("/repos", dependencies=[Depends(require_admin)])
 async def all_github_repos():
     """
@@ -55,3 +59,17 @@ async def delete_repo(repo_name: str):
     """Delete all chunks for a given GitHub repo from the vector store."""
     deleted = delete_repo_chunks(repo_name)
     return {"repo_name": repo_name, "chunks_deleted": deleted, "status": "ok"}
+
+
+@router.post("/bulk-delete", dependencies=[Depends(require_admin)])
+async def bulk_delete_repos(body: BulkDeleteReposRequest):
+    """Delete all chunks for multiple repos in one call."""
+    if not body.repo_names:
+        raise HTTPException(status_code=400, detail="repo_names must not be empty")
+    total = 0
+    results = []
+    for name in body.repo_names:
+        deleted = delete_repo_chunks(name)
+        total += deleted
+        results.append({"repo_name": name, "chunks_deleted": deleted})
+    return {"chunks_deleted": total, "repos": results, "status": "ok"}

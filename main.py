@@ -17,9 +17,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten to your Vercel domain in production
+    allow_origins=["https://rag-portfolio-kappa.vercel.app/","http://localhost:3000"],  # tighten to your Vercel domain in production
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

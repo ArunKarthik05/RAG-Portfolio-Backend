@@ -15,7 +15,7 @@ vecs==0.4.4
 # Document parsing
 pypdf==4.3.1
 python-docx==1.1.2
-tiktoken==0.7.0
+tiktoken>=0.8.0
 
 # Connectors
 PyGithub==2.4.0

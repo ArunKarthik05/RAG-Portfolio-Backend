@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     # API Keys
     openai_api_key: str
     admin_api_key: str  # secret key to protect /ingest and /admin endpoints
+    admin_password: str = ""  # password for the frontend admin panel
+    internal_api_key: str = ""  # shared secret between Next.js server and this backend
 
     # Supabase
     supabase_url: str
