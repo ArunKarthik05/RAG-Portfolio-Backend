@@ -1,3 +1,17 @@
+"""
+Testimonials router.
+
+Required Supabase migration (run once):
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS upvote_count INTEGER DEFAULT 0;
+
+    CREATE TABLE IF NOT EXISTS testimonial_upvotes (
+        id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        testimonial_id UUID NOT NULL REFERENCES testimonials(id) ON DELETE CASCADE,
+        voter_id    TEXT NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(testimonial_id, voter_id)
+    );
+"""
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -17,16 +31,9 @@ router = APIRouter(prefix="/testimonials", tags=["testimonials"])
 # ── HMAC helpers ───────────────────────────────────────────────────────────────
 
 def _verify_admin_sig(payload: str, sig: str, ts: int, secret: str) -> bool:
-    """
-    Verify an HMAC-SHA256 admin signature.
-
-    The frontend signs f"{payload}:{ts}" with the admin secret as key.
-    We allow a ±5-minute clock skew window to prevent replay attacks.
-    The raw secret is never transmitted — only the signature.
-    """
     if not secret:
         return False
-    if abs(time.time() - ts) > 300:  # 5-minute window
+    if abs(time.time() - ts) > 300:
         return False
     msg = f"{payload}:{ts}".encode()
     expected = hmac.new(secret.encode(), msg, hashlib.sha256).digest()
@@ -54,7 +61,7 @@ class TestimonialUpdate(BaseModel):
     company: Optional[str] = Field(None, max_length=100)
     message: str = Field(..., min_length=10, max_length=1000)
     tags: list[str] = Field(default_factory=list, max_length=3)
-    user_id: str  # required to verify ownership
+    user_id: str
 
 
 class TestimonialOut(BaseModel):
@@ -67,12 +74,30 @@ class TestimonialOut(BaseModel):
     user_id: Optional[str]
     is_guest: bool
     created_at: str
+    upvote_count: int = 0
+
+
+class PaginatedTestimonialsOut(BaseModel):
+    items: list[TestimonialOut]
+    total: int
+    page: int
+    pages: int
+    limit: int
+
+
+class UpvoteRequest(BaseModel):
+    voter_id: str  # signed-in user email OR guest UUID from localStorage
+
+
+class UpvoteResponse(BaseModel):
+    upvoted: bool
+    upvote_count: int
 
 
 class BulkDeleteRequest(BaseModel):
     ids: list[str]
-    sig: str   # HMAC-SHA256 of "bulk:{sorted_ids}:{ts}"
-    ts: int    # Unix timestamp (seconds)
+    sig: str
+    ts: int
 
 
 # ── DB client ──────────────────────────────────────────────────────────────────
@@ -98,6 +123,7 @@ async def create_testimonial(body: TestimonialCreate):
         "user_id": body.user_id,
         "is_guest": body.user_id is None,
         "approved": True,
+        "upvote_count": 0,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     result = client.table("testimonials").insert(record).execute()
@@ -106,17 +132,88 @@ async def create_testimonial(body: TestimonialCreate):
     return _to_out(result.data[0])
 
 
-@router.get("/", response_model=list[TestimonialOut])
-async def list_testimonials():
+@router.get("/", response_model=PaginatedTestimonialsOut)
+async def list_testimonials(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=10, ge=1, le=50),
+):
     client = _client()
+    offset = (page - 1) * limit
+
     result = (
         client.table("testimonials")
-        .select("id,name,role,company,message,tags,user_id,is_guest,created_at")
+        .select(
+            "id,name,role,company,message,tags,user_id,is_guest,created_at,upvote_count",
+            count="exact",
+        )
         .eq("approved", True)
+        .order("upvote_count", desc=True)
         .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
         .execute()
     )
-    return result.data or []
+
+    total = result.count or 0
+    pages = max(1, (total + limit - 1) // limit)
+
+    return PaginatedTestimonialsOut(
+        items=[_to_out(r) for r in result.data or []],
+        total=total,
+        page=page,
+        pages=pages,
+        limit=limit,
+    )
+
+
+@router.post("/{testimonial_id}/upvote", response_model=UpvoteResponse)
+async def upvote_testimonial(testimonial_id: str, body: UpvoteRequest):
+    if not body.voter_id:
+        raise HTTPException(status_code=400, detail="voter_id required")
+
+    client = _client()
+
+    # Verify testimonial exists
+    existing = (
+        client.table("testimonials")
+        .select("id,upvote_count")
+        .eq("id", testimonial_id)
+        .eq("approved", True)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Testimonial not found")
+
+    current_count = int(existing.data[0].get("upvote_count") or 0)
+
+    # Check if voter already upvoted
+    vote = (
+        client.table("testimonial_upvotes")
+        .select("id")
+        .eq("testimonial_id", testimonial_id)
+        .eq("voter_id", body.voter_id)
+        .execute()
+    )
+
+    if vote.data:
+        # Toggle off — remove upvote
+        client.table("testimonial_upvotes") \
+            .delete() \
+            .eq("testimonial_id", testimonial_id) \
+            .eq("voter_id", body.voter_id) \
+            .execute()
+        new_count = max(0, current_count - 1)
+        client.table("testimonials").update({"upvote_count": new_count}).eq("id", testimonial_id).execute()
+        return UpvoteResponse(upvoted=False, upvote_count=new_count)
+    else:
+        # Toggle on — add upvote
+        client.table("testimonial_upvotes").insert({
+            "testimonial_id": testimonial_id,
+            "voter_id": body.voter_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+        new_count = current_count + 1
+        client.table("testimonials").update({"upvote_count": new_count}).eq("id", testimonial_id).execute()
+        return UpvoteResponse(upvoted=True, upvote_count=new_count)
 
 
 @router.put("/{testimonial_id}", response_model=TestimonialOut)
@@ -149,16 +246,13 @@ async def update_testimonial(testimonial_id: str, body: TestimonialUpdate):
 @router.delete("/{testimonial_id}", status_code=204)
 async def delete_testimonial(
     testimonial_id: str,
-    # Regular user deletion
     user_id: Optional[str] = Query(default=None),
-    # Admin deletion via HMAC — raw secret is NEVER sent
     sig: Optional[str] = Query(default=None),
     ts: Optional[int] = Query(default=None),
 ):
     client = _client()
     settings = get_settings()
 
-    # Determine if this is a verified admin request
     is_admin = (
         sig is not None
         and ts is not None
@@ -180,10 +274,6 @@ async def delete_testimonial(
 
 @router.post("/bulk-delete", status_code=200)
 async def bulk_delete_testimonials(body: BulkDeleteRequest):
-    """
-    Bulk delete testimonials. Admin-only via HMAC signature.
-    Payload signed by frontend: "bulk:{sorted comma-joined ids}:{ts}"
-    """
     settings = get_settings()
     sorted_ids = ",".join(sorted(body.ids))
     payload = f"bulk:{sorted_ids}"
@@ -209,4 +299,5 @@ def _to_out(row: dict) -> TestimonialOut:
         user_id=row.get("user_id"),
         is_guest=row.get("is_guest", True),
         created_at=row["created_at"],
+        upvote_count=int(row.get("upvote_count") or 0),
     )
