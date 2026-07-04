@@ -13,29 +13,51 @@ Security model:
   Ownership is enforced on every individual-conversation endpoint:
   the conversation's stored user_id must match x-user-id.
 """
-from fastapi import APIRouter, HTTPException, Header, Depends
+import logging
+from fastapi import APIRouter, HTTPException, Header, Depends, Request
 from typing import Optional
 from supabase import create_client
 from config import get_settings
 from models.schemas import ConversationCreate, ConversationOut, MessageOut
+
+logger = logging.getLogger("conversations")
+logging.basicConfig(level=logging.DEBUG)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 # ── Auth dependency ───────────────────────────────────────────────
 
-def require_internal(x_internal_key: str = Header(...)):
+def require_internal(request: Request, x_internal_key: str = Header(default="")):
     """Reject any request not originating from the Next.js server."""
     settings = get_settings()
-    key = settings.internal_api_key
-    if not key or x_internal_key != key:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    stored_key = settings.internal_api_key
+
+    # Debug: log what we received vs what we expect (safe — only logs presence/length, not value)
+    logger.debug(
+        "require_internal | stored_key set=%s len=%d | received_key set=%s len=%d | match=%s",
+        bool(stored_key), len(stored_key),
+        bool(x_internal_key), len(x_internal_key),
+        x_internal_key == stored_key,
+    )
+
+    if not stored_key:
+        logger.error("INTERNAL_API_KEY is not set in backend env — all conversation requests will be rejected")
+        raise HTTPException(status_code=403, detail="Server misconfiguration: INTERNAL_API_KEY not set")
+
+    if not x_internal_key:
+        logger.warning("Request missing x-internal-key header | path=%s", request.url.path)
+        raise HTTPException(status_code=403, detail="Missing x-internal-key header")
+
+    if x_internal_key != stored_key:
+        logger.warning("x-internal-key mismatch | path=%s", request.url.path)
+        raise HTTPException(status_code=403, detail="Invalid x-internal-key")
 
 
-def get_caller_user_id(x_user_id: str = Header(...)) -> str:
+def get_caller_user_id(x_user_id: str = Header(default="")) -> str:
     """Extract the verified user identity injected by the Next.js proxy."""
     if not x_user_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=401, detail="Unauthorized: missing x-user-id header")
     return x_user_id
 
 
