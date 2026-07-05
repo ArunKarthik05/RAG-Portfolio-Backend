@@ -187,7 +187,7 @@ async def run_rag_chat(
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
     })
-    lf.flush()
+    lf.flush()  # blocks until queue is drained
 
     return ChatResponse(
         answer=answer,
@@ -233,7 +233,7 @@ async def stream_rag_chat(
 
     if cached:
         trace.update(output={"from_cache": True, "proof_id": cached.get("proof_id", "")})
-        lf.flush()
+        lf.flush()  # blocks until queue is drained
         cached_answer: str = cached.get("answer", "")
         chunk_size = 40
         for i in range(0, len(cached_answer), chunk_size):
@@ -426,7 +426,7 @@ async def stream_rag_chat(
         "completion_tokens": completion_tokens,
         "suggestions_count": len(suggestions),
     })
-    lf.flush()
+    lf.flush()  # blocks until queue is drained
 
     yield f"data: [DONE]\n\n"
     yield f"event: proof\ndata: {json.dumps({'proof_id': proof_id, 'citations': [c.model_dump(mode='json') for c in citations], 'suggestions': suggestions, 'from_cache': False})}\n\n"

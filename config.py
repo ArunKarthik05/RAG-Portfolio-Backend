@@ -25,14 +25,14 @@ class Settings(BaseSettings):
     # Observability (optional)
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_host: str = "https://us.cloud.langfuse.com"
 
     # Logging
     debug_logs: bool = False   # set DEBUG_LOGS=true in .env to enable verbose logging
 
     # App settings
     app_owner_name: str = "Arun Karthik"
-    app_owner_email: str = "arunkarthik.k@zohocorp.com"
+    app_owner_email: str = "ak05032k2@gmail.com"
     # Chunking — used only for custom file uploads (PDF, DOCX, TXT).
     # Structured sources (GitHub, LinkedIn, Calendar) use semantic chunking
     # in their connectors directly — one chunk per logical unit.
